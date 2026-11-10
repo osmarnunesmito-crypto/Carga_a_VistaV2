@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CargaAvista - Gestão Logística Integrada</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            vinho: { 700: '#7B1E36', 800: '#5E1225', 900: '#3E0A17', dark: '#1A0F13', cardDark: '#2A1A20' },
+            dourado: { 400: '#E5C158', 500: '#D4AF37', 600: '#C9A227' },
+            creme: { 50: '#FFFDF9', 100: '#FAF6F0', 200: '#E5E0D8' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1?deps=react@18.2.0",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7"
+      }
+    }
+  </script>
+
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); }
+    ::-webkit-scrollbar-thumb { background: #D4AF37; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-creme-100 dark:bg-vinho-dark text-slate-800 dark:text-creme-100 min-h-screen font-sans transition-colors duration-300">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useMemo } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import {
+      LayoutDashboard, Ship, Package, Truck, Users, Building2, Layers, Container,
+      Wallet, Banknote, FileBarChart, ClipboardList, Settings, LogOut, Anchor,
+      PackageOpen, CheckCircle2, AlertTriangle, MessageCircle, Mail, Calendar,
+      Phone, FileText, Sun, Moon, Plus, Search, ChevronRight, ChevronDown,
+      Copy, Check, ArrowRight, Edit, Trash2, Clock, Filter, ArrowUpRight,
+      ArrowDownRight, RefreshCw, X
+    } from 'lucide-react';
+    import { createClient } from '@supabase/supabase-js';
+
+    // ================================================================
+    // ⚙️ CONFIGURAÇÃO SUPABASE (já preenchida)
+    // ================================================================
+    const SUPABASE_URL = "https://jabsytwgmlgkprungwdv.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_8cnr45BQwlwspGV4tikHVw_xgINyvZ8";
+
+    let supabase = null;
+    let isSupabaseActive = false;
+
+    try {
+      supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      isSupabaseActive = true;
+      console.log("✅ Supabase inicializado.");
+    } catch (err) {
+      console.warn("❌ Erro ao inicializar Supabase:", err);
+    }
+
+    // ==========================================
+    // HELPERS DE DATA (DD/MM/AAAA)
+    // ==========================================
+    const getTodayBR = () => {
+      const d = new Date();
+      return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    };
+
+    const getNowBRString = () => {
+      const d = new Date();
+      return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
+
+    const parseBRDate = (brStr) => {
+      if (!brStr) return null;
+      const parts = String(brStr).split('/');
+      if (parts.length !== 3) return null;
+      const [d, m, y] = parts;
+      const date = new Date(Number(y), Number(m)-1, Number(d));
+      return isNaN(date.getTime()) ? null : date;
+    };
+
+    const maskDateInput = (value) => {
+      const digits = String(value).replace(/\D/g, '').slice(0, 8);
+      if (digits.length <= 2) return digits;
+      if (digits.length <= 4) return `${digits.slice(0,2)}/${digits.slice(2)}`;
+      return `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
+    };
+
+    const fmtBRL = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(val) || 0);
+
+    // ==========================================
+    // ESTADOS BRASILEIROS E CIDADES PADRÃO
+    // ==========================================
+    const ESTADOS_NOMES = {
+      AC:'Acre', AL:'Alagoas', AP:'Amapá', AM:'Amazonas', BA:'Bahia', CE:'Ceará',
+      DF:'Distrito Federal', ES:'Espírito Santo', GO:'Goiás', MA:'Maranhão',
+      MT:'Mato Grosso', MS:'Mato Grosso do Sul', MG:'Minas Gerais', PA:'Pará',
+      PB:'Paraíba', PR:'Paraná', PE:'Pernambuco', PI:'Piauí', RJ:'Rio de Janeiro',
+      RN:'Rio Grande do Norte', RS:'Rio Grande do Sul', RO:'Rondônia', RR:'Roraima',
+      SC:'Santa Catarina', SP:'São Paulo', SE:'Sergipe', TO:'Tocantins'
+    };
+
+    const ESTADOS_BR = {
+      AC: ['Rio Branco', 'Cruzeiro do Sul'],
+      AL: ['Maceió', 'Arapiraca'],
+      AP: ['Macapá', 'Santana'],
+      AM: ['Manaus', 'Parintins', 'Itacoatiara'],
+      BA: ['Salvador', 'Feira de Santana', 'Vitória da Conquista'],
+      CE: ['Fortaleza', 'Juazeiro do Norte', 'Sobral'],
+      DF: ['Brasília'],
+      ES: ['Vitória', 'Vila Velha', 'Serra'],
+      GO: ['Goiânia', 'Aparecida de Goiânia', 'Anápolis'],
+      MA: ['São Luís', 'Imperatriz', 'Timon'],
+      MT: ['Cuiabá', 'Várzea Grande', 'Rondonópolis'],
+      MS: ['Campo Grande', 'Dourados', 'Três Lagoas'],
+      MG: ['Belo Horizonte', 'Uberlândia', 'Contagem'],
+      PA: ['Belém', 'Ananindeua', 'Santarém'],
+      PB: ['João Pessoa', 'Campina Grande'],
+      PR: ['Curitiba', 'Londrina', 'Maringá'],
+      PE: ['Recife', 'Jaboatão dos Guararapes', 'Olinda'],
+      PI: ['Teresina', 'Parnaíba'],
+      RJ: ['Rio de Janeiro', 'Niterói', 'Nova Iguaçu'],
+      RN: ['Natal', 'Mossoró'],
+      RS: ['Porto Alegre', 'Caxias do Sul', 'Pelotas'],
+      RO: ['Porto Velho', 'Ji-Paraná'],
+      RR: ['Boa Vista'],
+      SC: ['Florianópolis', 'Joinville', 'Blumenau'],
+      SP: ['São Paulo', 'Campinas', 'Santos', 'Ribeirão Preto'],
+      SE: ['Aracaju', 'Nossa Senhora do Socorro'],
+      TO: ['Palmas', 'Araguaína']
+    };
+
+    const ESTADOS_UFS = Object.keys(ESTADOS_NOMES).sort();
+
+    // ==========================================
+    // FALLBACK (vazio - dados vêm do Supabase)
+    // ==========================================
+    const MOCK_INICIAL = {
+      modais: [],
+      transportadoras: [],
+      clientes: [],
+      cargas: [],
+      cidades: [],
+      finManuais: []
+    };
+
+    const STATUS_CONFIG = {
+      CONTRATADA: { label: 'Contratada', color: 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200' },
+      COLETA_AGENDADA: { label: 'Coleta Agendada', color: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-200' },
+      EM_COLETA: { label: 'Em Coleta', color: 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-200' },
+      COLETADA: { label: 'Coletada', color: 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950 dark:text-indigo-200' },
+      EMBARCADA: { label: 'Embarcada', color: 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-200' },
+      EM_TRANSITO: { label: 'Em Trânsito', color: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-200' },
+      DESEMBARQUE: { label: 'Desembarque', color: 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-200' },
+      ENTREGUE: { label: 'Entregue', color: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200' },
+      ATRASADA: { label: 'Atrasada', color: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-200' },
+      CANCELADA: { label: 'Cancelada', color: 'bg-gray-200 text-gray-700 border-gray-400 dark:bg-gray-800 dark:text-gray-300' }
+    };    // ==========================================
+    // APP PRINCIPAL
+    // ==========================================
+    function App() {
+      const [darkMode, setDarkMode] = useState(false);
+      const [user, setUser] = useState(null);
+      const [loginEmail, setLoginEmail] = useState('');
+      const [loginPass, setLoginPass] = useState('');
+      const [loginError, setLoginError] = useState('');
+      const [isAuthChecking, setIsAuthChecking] = useState(true);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [dbData, setDbData] = useState({
+        modais: [], transportadoras: [], clientes: [], cargas: [], cidades: [], finManuais: []
+      });
+      const [selectedCargaId, setSelectedCargaId] = useState(null);
+      const [isLoading, setIsLoading] = useState(false);
+
+      useEffect(() => {
+        if (darkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }, [darkMode]);
+
+      useEffect(() => {
+        if (isSupabaseActive && supabase) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user || null);
+            setIsAuthChecking(false);
+          });
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((_ev, session) => {
+            setUser(session?.user || null);
+          });
+          return () => subscription.unsubscribe();
+        } else {
+          setIsAuthChecking(false);
+        }
+      }, []);
+
+      useEffect(() => {
+        if (!user) return;
+        if (!isSupabaseActive || !supabase) {
+          setDbData(MOCK_INICIAL);
+          return;
+        }
+        setIsLoading(true);
+        const loadAll = async () => {
+          const tables = ['modais', 'transportadoras', 'clientes', 'cargas', 'cidades', 'fin_manuais'];
+          const results = {};
+          for (const t of tables) {
+            const { data } = await supabase.from(t).select('*');
+            results[t] = data || [];
+          }
+          setDbData({
+            modais: results.modais,
+            transportadoras: results.transportadoras,
+            clientes: results.clientes,
+            cargas: results.cargas,
+            cidades: results.cidades,
+            finManuais: results.fin_manuais
+          });
+          setIsLoading(false);
+        };
+        loadAll();
+
+        const channels = ['modais','transportadoras','clientes','cargas','cidades','fin_manuais'].map(t =>
+          supabase.channel(`rt_${t}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: t }, () => loadAll())
+            .subscribe()
+        );
+        return () => channels.forEach(ch => supabase.removeChannel(ch));
+      }, [user]);
+
+      const saveData = async (colName, item) => {
+        const isEdit = !!item.id;
+        const itemId = item.id || `${colName.substring(0,2)}_${Date.now()}`;
+        const finalItem = { ...item, id: itemId };
+        const key = colName === 'fin_manuais' ? 'finManuais' : colName;
+        const nextCol = isEdit
+          ? dbData[key].map(i => i.id === itemId ? finalItem : i)
+          : [...dbData[key], finalItem];
+        setDbData({ ...dbData, [key]: nextCol });
+        if (isSupabaseActive && supabase) {
+          const { error } = await supabase.from(colName).upsert(finalItem);
+          if (error) console.error("Erro ao salvar:", error);
+        }
+        return finalItem;
+      };
+
+      const deleteItem = async (colName, id) => {
+        const key = colName === 'fin_manuais' ? 'finManuais' : colName;
+        setDbData({ ...dbData, [key]: dbData[key].filter(i => i.id !== id) });
+        if (isSupabaseActive && supabase) {
+          await supabase.from(colName).delete().eq('id', id);
+        }
+      };
+
+      const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoginError('');
+        const cleanEmail = loginEmail.trim().toLowerCase();
+        if (isSupabaseActive && supabase) {
+          const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password: loginPass });
+          if (error) setLoginError('Falha no login: ' + error.message);
+        } else {
+          if (loginPass.length >= 4) setUser({ email: cleanEmail, name: 'Demo' });
+          else setLoginError('Senha deve possuir no mínimo 4 caracteres.');
+        }
+      };
+
+      const handleLogout = async () => {
+        if (isSupabaseActive && supabase) await supabase.auth.signOut();
+        setUser(null);
+      };
+
+      // 🔴 LIMPAR TODOS OS DADOS
+      const handleClearSampleData = async () => {
+        const msg = '⚠️ ATENÇÃO!\n\nIsso vai EXCLUIR TODOS os registros do Supabase:\n• Modais\n• Transportadoras\n• Clientes\n• Cargas\n• Cidades cadastradas\n• Lançamentos financeiros\n\nDeseja continuar?';
+        if (!window.confirm(msg)) return;
+        if (isSupabaseActive && supabase) {
+          setIsLoading(true);
+          for (const t of ['cargas','clientes','transportadoras','modais','cidades','fin_manuais']) {
+            await supabase.from(t).delete().neq('id', '___never___');
+          }
+          setIsLoading(false);
+        }
+        setDbData({ modais: [], transportadoras: [], clientes: [], cargas: [], cidades: [], finManuais: [] });
+        alert('✅ Todos os dados foram limpos.');
+      };
+
+      const cargasComAtrasoCalculado = useMemo(() => {
+        const today = new Date(); today.setHours(0,0,0,0);
+        return (dbData.cargas || []).map(c => {
+          const prev = parseBRDate(c.previsaoChegada);
+          const isAtrasada = c.status !== 'ENTREGUE' && c.status !== 'CANCELADA' && prev && prev < today;
+          return { ...c, displayStatus: isAtrasada ? 'ATRASADA' : c.status };
+        });
+      }, [dbData.cargas]);
+
+      if (isAuthChecking) {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-vinho-800 text-dourado-500">
+            <RefreshCw className="w-12 h-12 animate-spin mb-4" />
+            <h1 className="text-xl font-bold tracking-widest uppercase">CargaAvista</h1>
+            <p className="text-xs text-slate-300 mt-2">Carregando painel de controle...</p>
+          </div>
+        );
+      }
+
+      if (!user) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-vinho-900 via-vinho-800 to-slate-900">
+            <div className="w-full max-w-md bg-white dark:bg-vinho-cardDark p-8 rounded-2xl shadow-2xl border border-dourado-500/30">
+              <div className="text-center mb-8">
+                <div className="inline-flex p-4 rounded-2xl bg-gradient-to-tr from-vinho-800 to-vinho-700 text-dourado-500 mb-3 shadow-lg">
+                  <Ship className="w-10 h-10" />
+                </div>
+                <h1 className="text-2xl font-bold tracking-tight text-vinho-800 dark:text-dourado-500">CargaAvista</h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Gestão Logística Integrada & Agenciamento</p>
+              </div>
+              {loginError && (
+                <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 text-rose-700 dark:text-rose-300 text-xs rounded-xl flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" /><span>{loginError}</span>
+                </div>
+              )}
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">E-mail</label>
+                  <div className="relative">
+                    <Mail className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
+                    <input type="email" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="seu-email@logistica.com"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-vinho-dark border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-dourado-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">Senha</label>
+                  <div className="relative">
+                    <FileText className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
+                    <input type="password" required value={loginPass} onChange={(e) => setLoginPass(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-vinho-dark border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-dourado-500" />
+                  </div>
+                </div>
+                <button type="submit"
+                  className="w-full py-3 bg-gradient-to-r from-vinho-800 to-vinho-700 hover:from-vinho-700 hover:to-vinho-800 text-dourado-500 font-bold text-sm rounded-xl shadow-lg transition-all duration-300 transform active:scale-95 border border-dourado-500/20">
+                  Entrar no Sistema
+                </button>
+              </form>
+              <div className="mt-6 text-center text-xs">
+                {isSupabaseActive ? (
+                  <span className="text-emerald-500 font-semibold">● Supabase Conectado em Tempo Real</span>
+                ) : (
+                  <span className="text-amber-500 font-semibold">● Desconectado</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="flex flex-col lg:flex-row min-h-screen">
+          <aside className="w-full lg:w-64 bg-gradient-to-b from-vinho-900 to-vinho-800 text-white shrink-0 border-r border-vinho-700/50 flex flex-col justify-between">
+            <div>
+              <div className="p-5 flex items-center justify-between border-b border-vinho-700/40">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-dourado-500 text-vinho-900 rounded-xl font-bold shadow-md">
+                    <Ship className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h1 className="font-bold tracking-tight text-lg text-dourado-500">CargaAvista</h1>
+                    <p className="text-[10px] text-slate-300">Gestão de Agenciamento</p>
+                  </div>
+                </div>
+                <button onClick={() => setDarkMode(!darkMode)}
+                  className="p-2 rounded-lg bg-vinho-700/60 hover:bg-vinho-700 text-dourado-400 transition-colors">
+                  {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <nav className="p-3 space-y-1 overflow-x-auto flex lg:flex-col gap-1 lg:gap-0 border-b lg:border-b-0 border-vinho-700/40">
+                {[
+                  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                  { id: 'cargas', label: 'Controle Cargas', icon: Package },
+                  { id: 'transportadoras', label: 'Transportadoras', icon: Truck },
+                  { id: 'clientes', label: 'Clientes', icon: Users },
+                  { id: 'modais', label: 'Modais', icon: Layers },
+                  { id: 'financeiro', label: 'Financeiro', icon: Wallet },
+                  { id: 'relatorios', label: 'Relatórios', icon: FileBarChart }
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button key={item.id}
+                      onClick={() => { setActiveTab(item.id); setSelectedCargaId(null); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
+                        isActive ? 'bg-dourado-500 text-vinho-900 shadow-lg font-bold'
+                        : 'text-slate-200 hover:bg-vinho-700/50 hover:text-dourado-400'
+                      }`}>
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="p-3 border-t border-vinho-700/40">
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2 mb-2">Sistema</p>
+                <button onClick={handleClearSampleData}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-semibold text-rose-300 hover:bg-rose-900/40 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Limpar Todos os Dados</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-vinho-700/40 bg-vinho-900/60 hidden lg:block">
+              <div className="flex items-center justify-between text-xs">
+                <div className="truncate max-w-[140px]">
+                  <p className="font-bold text-dourado-400 truncate">{user.email}</p>
+                  <p className="text-[10px] text-slate-400">Proprietário</p>
+                </div>
+                <button onClick={handleLogout}
+                  className="p-2 rounded-lg bg-vinho-700/40 hover:bg-rose-900 text-rose-300 transition-colors">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
+            {isLoading && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-xl text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Sincronizando com Supabase...</span>
+              </div>
+            )}
+
+            {activeTab === 'dashboard' && (
+              <DashboardView cargas={cargasComAtrasoCalculado} clientes={dbData.clientes}
+                transportadoras={dbData.transportadoras}
+                onSelectCarga={(id) => { setSelectedCargaId(id); setActiveTab('cargas'); }} />
+            )}
+            {activeTab === 'cargas' && (
+              <CargasView cargas={cargasComAtrasoCalculado} clientes={dbData.clientes}
+                transportadoras={dbData.transportadoras} modais={dbData.modais}
+                cidades={dbData.cidades}
+                selectedCargaId={selectedCargaId} setSelectedCargaId={setSelectedCargaId}
+                onSave={(item) => saveData('cargas', item)} onDelete={(id) => deleteItem('cargas', id)}
+                onSaveCidade={(item) => saveData('cidades', item)} />
+            )}
+            {activeTab === 'transportadoras' && (
+              <CRUDView title="Cadastro de Transportadoras Terceirizadas" icon={Truck}
+                items={dbData.transportadoras} modais={dbData.modais}
+                fields={[
+                  { key: 'razaoSocial', label: 'Razão Social', type: 'text', required: true },
+                  { key: 'cnpj', label: 'CNPJ', type: 'text', required: true },
+                  { key: 'responsavel', label: 'Responsável', type: 'text', required: true },
+                  { key: 'telefone', label: 'Telefone', type: 'text', required: true },
+                  { key: 'whatsapp', label: 'WhatsApp', type: 'text', required: true },
+                  { key: 'email', label: 'E-mail', type: 'email', required: true },
+                  { key: 'modalPrincipal', label: 'Modal Principal', type: 'select_modal', required: true },
+                  { key: 'endereco', label: 'Endereço', type: 'text' },
+                  { key: 'observacoes', label: 'Observações', type: 'textarea' }
+                ]}
+                onSave={(item) => saveData('transportadoras', item)} onDelete={(id) => deleteItem('transportadoras', id)} />
+            )}
+            {activeTab === 'clientes' && (
+              <CRUDView title="Cadastro de Clientes Contratantes" icon={Users}
+                items={dbData.clientes}
+                fields={[
+                  { key: 'nome', label: 'Nome / Razão Social', type: 'text', required: true },
+                  { key: 'cnpjCpf', label: 'CNPJ / CPF', type: 'text', required: true },
+                  { key: 'responsavel', label: 'Pessoa de Contato', type: 'text', required: true },
+                  { key: 'telefone', label: 'Telefone', type: 'text', required: true },
+                  { key: 'whatsapp', label: 'WhatsApp', type: 'text', required: true },
+                  { key: 'email', label: 'E-mail', type: 'email', required: true },
+                  { key: 'endereco', label: 'Endereço', type: 'text' },
+                  { key: 'observacoes', label: 'Observações', type: 'textarea' }
+                ]}
+                onSave={(item) => saveData('clientes', item)} onDelete={(id) => deleteItem('clientes', id)} />
+            )}
+            {activeTab === 'modais' && (
+              <CRUDView title="Modais de Transporte" icon={Layers} items={dbData.modais}
+                fields={[{ key: 'nome', label: 'Nome do Modal', type: 'text', required: true }]}
+                onSave={(item) => saveData('modais', item)} onDelete={(id) => deleteItem('modais', id)} />
+            )}
+            {activeTab === 'financeiro' && (
+              <FinanceiroView cargas={cargasComAtrasoCalculado} clientes={dbData.clientes}
+                transportadoras={dbData.transportadoras} contasManuais={dbData.finManuais}
+                onSaveCarga={(item) => saveData('cargas', item)}
+                onSaveContaManual={(item) => saveData('fin_manuais', item)}
+                onDeleteContaManual={(id) => deleteItem('fin_manuais', id)} />
+            )}
+            {activeTab === 'relatorios' && (
+              <RelatoriosView cargas={cargasComAtrasoCalculado} clientes={dbData.clientes}
+                transportadoras={dbData.transportadoras} modais={dbData.modais} />
+            )}
+          </main>
+        </div>
+      );
+    }    // ==========================================
+    // DASHBOARD VIEW
+    // ==========================================
+    function DashboardView({ cargas, clientes, transportadoras, onSelectCarga }) {
+      const today = getTodayBR();
+      const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+
+      const cargasAtivas = cargas.filter(c => c.status !== 'ENTREGUE' && c.status !== 'CANCELADA');
+      const emTransito = cargas.filter(c => c.status === 'EM_TRANSITO');
+      const atrasadas = cargas.filter(c => c.displayStatus === 'ATRASADA');
+
+      const faturamentoTotal = cargas.reduce((acc, c) => acc + (Number(c.valorFaturamento) || 0), 0);
+      const contasAReceber = cargas.filter(c => c.statusRecebimento !== 'Pago').reduce((acc, c) => acc + (Number(c.valorFaturamento) || 0), 0);
+      const contasAPagar = cargas.filter(c => c.statusPagamento !== 'Pago').reduce((acc, c) => acc + (Number(c.custoTransportadora) || 0), 0);
+      const margemLiquida = faturamentoTotal - cargas.reduce((acc, c) => acc + (Number(c.custoTransportadora) || 0), 0);
+
+      const chartBarData = [
+        { name: 'Receita Total', valor: faturamentoTotal, color: '#7B1E36' },
+        { name: 'Custo Terceiros', valor: cargas.reduce((acc, c) => acc + (Number(c.custoTransportadora) || 0), 0), color: '#DC2626' },
+        { name: 'Margem Bruta', valor: margemLiquida, color: '#D4AF37' }
+      ];
+      const maxValChart = Math.max(...chartBarData.map(d => d.valor), 1);
+
+      const statusCounts = cargas.reduce((acc, c) => {
+        const st = c.displayStatus || c.status;
+        acc[st] = (acc[st] || 0) + 1;
+        return acc;
+      }, {});
+      const PIE_COLORS = ['#3B82F6', '#10B981', '#EF4444', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
+      const pieEntries = Object.keys(statusCounts).map((st, idx) => ({
+        name: STATUS_CONFIG[st]?.label || st,
+        count: statusCounts[st],
+        color: PIE_COLORS[idx % PIE_COLORS.length]
+      }));
+      const totalCargasPie = cargas.length || 1;
+
+      const proximosEmbarques = cargas.filter(c => {
+        if (!c.previsaoEmbarque || c.status === 'EMBARCADA' || c.status === 'EM_TRANSITO' || c.status === 'ENTREGUE') return false;
+        const embDate = parseBRDate(c.previsaoEmbarque);
+        if (!embDate) return false;
+        const diff = (embDate - todayDate) / (1000 * 60 * 60 * 24);
+        return diff >= 0 && diff <= 3;
+      });
+
+      const chegadasHoje = cargas.filter(c => c.previsaoChegada === today && c.status !== 'ENTREGUE');
+
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-vinho-800 dark:text-dourado-500 tracking-tight">Painel Operacional & Financeiro</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Visão consolidada em tempo real da operação e margem do negócio</p>
+            </div>
+            <span className="text-xs font-semibold px-3 py-1 bg-dourado-500/20 text-dourado-600 dark:text-dourado-400 border border-dourado-500/30 rounded-full">
+              Status Atualizado
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-4 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cargas Ativas</p>
+              <h3 className="text-2xl font-bold text-slate-800 dark:text-white mt-1">{cargasAtivas.length}</h3>
+              <p className="text-[10px] text-blue-500 font-semibold mt-1">{emTransito.length} em trânsito agora</p>
+            </div>
+            <div className="p-4 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cargas Atrasadas</p>
+              <h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1">{atrasadas.length}</h3>
+              <p className="text-[10px] text-rose-500 font-semibold mt-1">Requer atenção operacional</p>
+            </div>
+            <div className="p-4 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Faturamento Total</p>
+              <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{fmtBRL(faturamentoTotal)}</h3>
+              <p className="text-[10px] text-slate-400 mt-1">A Receber: {fmtBRL(contasAReceber)}</p>
+            </div>
+            <div className="p-4 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Margem Líquida</p>
+              <h3 className="text-xl font-bold text-dourado-600 dark:text-dourado-400 mt-1">{fmtBRL(margemLiquida)}</h3>
+              <p className="text-[10px] text-slate-400 mt-1">Custo Fretes: {fmtBRL(contasAPagar)}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-creme-100 mb-4">Faturamento x Custos x Margem</h3>
+              <div className="space-y-4 py-2">
+                {chartBarData.map((item, idx) => {
+                  const pct = Math.round((item.valor / maxValChart) * 100);
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-xs font-semibold">
+                        <span className="text-slate-600 dark:text-slate-300">{item.name}</span>
+                        <span className="font-bold text-slate-800 dark:text-white">{fmtBRL(item.valor)}</span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-100 dark:bg-vinho-dark rounded-full overflow-hidden border border-slate-200/50 dark:border-slate-700/50">
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: item.color }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-creme-100 mb-4">Distribuição de Cargas por Status</h3>
+              <div className="space-y-3 py-1">
+                {pieEntries.map((item, idx) => {
+                  const pct = Math.round((item.count / totalCargasPie) * 100);
+                  return (
+                    <div key={idx} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }}></span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{item.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-slate-800 dark:text-white">{item.count} carga(s)</span>
+                        <span className="text-[11px] text-slate-400 font-mono w-10 text-right">{pct}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-creme-100 mb-4 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <span>Ações Operacionais Urgentes</span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl">
+                <h4 className="text-xs font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider mb-2">Cargas Atrasadas ({atrasadas.length})</h4>
+                {atrasadas.length === 0 ? (
+                  <p className="text-xs text-rose-600/70 dark:text-rose-400/70">Nenhuma carga em atraso no momento.</p>
+                ) : atrasadas.map(c => (
+                  <div key={c.id} onClick={() => onSelectCarga(c.id)}
+                    className="p-2 mb-1 bg-white dark:bg-vinho-dark rounded-lg cursor-pointer hover:shadow-md transition-all text-xs flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-white">{c.numeroCarga}</p>
+                      <p className="text-[10px] text-slate-500">{c.origem} → {c.destino}</p>
+                    </div>
+                    <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded">Ver</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-xl">
+                <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider mb-2">Embarques Próximos 3 Dias ({proximosEmbarques.length})</h4>
+                {proximosEmbarques.length === 0 ? (
+                  <p className="text-xs text-amber-600/70 dark:text-amber-400/70">Nenhum embarque agendado.</p>
+                ) : proximosEmbarques.map(c => (
+                  <div key={c.id} onClick={() => onSelectCarga(c.id)}
+                    className="p-2 mb-1 bg-white dark:bg-vinho-dark rounded-lg cursor-pointer hover:shadow-md transition-all text-xs flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-white">{c.numeroCarga}</p>
+                      <p className="text-[10px] text-slate-500">Prev. Emb: {c.previsaoEmbarque}</p>
+                    </div>
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Detalhes</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 rounded-xl">
+                <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider mb-2">Chegadas Previstas Hoje ({chegadasHoje.length})</h4>
+                {chegadasHoje.length === 0 ? (
+                  <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Nenhuma chegada prevista para hoje.</p>
+                ) : chegadasHoje.map(c => (
+                  <div key={c.id} onClick={() => onSelectCarga(c.id)}
+                    className="p-2 mb-1 bg-white dark:bg-vinho-dark rounded-lg cursor-pointer hover:shadow-md transition-all text-xs flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-white">{c.numeroCarga}</p>
+                      <p className="text-[10px] text-slate-500">{c.destino}</p>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Baixa</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // CARGAS VIEW (adicionado cidades e onSaveCidade)
+    // ==========================================
+    function CargasView({ cargas, clientes, transportadoras, modais, cidades, selectedCargaId, setSelectedCargaId, onSave, onDelete, onSaveCidade }) {
+      const [isWizardOpen, setIsWizardOpen] = useState(false);
+      const [filterSearch, setFilterSearch] = useState('');
+      const [filterStatus, setFilterStatus] = useState('');
+      const [filterModal, setFilterModal] = useState('');
+
+      const cargaSelecionada = cargas.find(c => c.id === selectedCargaId);
+
+      const cargasFiltradas = cargas.filter(c => {
+        const matchSearch = !filterSearch ||
+          c.numeroCarga?.toLowerCase().includes(filterSearch.toLowerCase()) ||
+          c.origem?.toLowerCase().includes(filterSearch.toLowerCase()) ||
+          c.destino?.toLowerCase().includes(filterSearch.toLowerCase());
+        const matchStatus = !filterStatus || c.displayStatus === filterStatus;
+        const matchModal = !filterModal || c.modalId === filterModal;
+        return matchSearch && matchStatus && matchModal;
+      });
+
+      if (cargaSelecionada) {
+        return <DetalhesCargaView carga={cargaSelecionada} clientes={clientes}
+          transportadoras={transportadoras} modais={modais}
+          onBack={() => setSelectedCargaId(null)} onSave={onSave} />;
+      }
+
+      return (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-vinho-800 dark:text-dourado-500 tracking-tight">Controle Integral de Cargas</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Acompanhe o fluxo de contratação até o destino final</p>
+            </div>
+            <button onClick={() => setIsWizardOpen(true)}
+              className="px-4 py-2.5 bg-vinho-800 hover:bg-vinho-700 text-dourado-500 font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 justify-center">
+              <Plus className="w-4 h-4" />
+              <span>Nova Carga (Wizard)</span>
+            </button>
+          </div>
+
+          <div className="p-4 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <input type="text" placeholder="Buscar por Nº carga, origem ou destino..."
+                value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-vinho-dark border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-dourado-500" />
+            </div>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-vinho-dark border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+              <option value="">Todos os Status</option>
+              {Object.keys(STATUS_CONFIG).map(st => <option key={st} value={st}>{STATUS_CONFIG[st].label}</option>)}
+            </select>
+            <select value={filterModal} onChange={(e) => setFilterModal(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-vinho-dark border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+              <option value="">Todos os Modais</option>
+              {modais.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </div>
+
+          {isWizardOpen && (
+            <WizardNovaCarga clientes={clientes} transportadoras={transportadoras} modais={modais}
+              cidades={cidades} onSaveCidade={onSaveCidade}
+              onClose={() => setIsWizardOpen(false)}
+              onSave={async (novaCarga) => { await onSave(novaCarga); setIsWizardOpen(false); }} />
+          )}
+
+          <div className="bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-vinho-800 text-dourado-500 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th className="p-3.5">Nº Carga</th>
+                    <th className="p-3.5">Cliente</th>
+                    <th className="p-3.5">Transportadora</th>
+                    <th className="p-3.5">Modal</th>
+                    <th className="p-3.5">Origem / Destino</th>
+                    <th className="p-3.5">Previsões</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5">Margem</th>
+                    <th className="p-3.5 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {cargasFiltradas.length === 0 ? (
+                    <tr><td colSpan="9" className="p-8 text-center text-slate-400">Nenhuma carga encontrada.</td></tr>
+                  ) : cargasFiltradas.map(c => {
+                    const cli = clientes.find(x => x.id === c.clienteId);
+                    const transp = transportadoras.find(x => x.id === c.transportadoraId);
+                    const mod = modais.find(x => x.id === c.modalId);
+                    const margem = (Number(c.valorFaturamento) || 0) - (Number(c.custoTransportadora) || 0);
+                    const stCfg = STATUS_CONFIG[c.displayStatus] || STATUS_CONFIG.CONTRATADA;
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-vinho-dark/50 transition-colors">
+                        <td className="p-3.5 font-bold text-vinho-800 dark:text-dourado-400">{c.numeroCarga}</td>
+                        <td className="p-3.5 font-medium">{cli?.nome || 'N/A'}</td>
+                        <td className="p-3.5 text-slate-500">{transp?.razaoSocial || 'N/A'}</td>
+                        <td className="p-3.5">{mod?.nome || 'N/A'}</td>
+                        <td className="p-3.5"><span className="font-semibold">{c.origem}</span> → <span className="font-semibold">{c.destino}</span></td>
+                        <td className="p-3.5 text-[11px] text-slate-500">
+                          Emb: {c.previsaoEmbarque || '-'}<br/>Cheg: {c.previsaoChegada || '-'}
+                        </td>
+                        <td className="p-3.5">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${stCfg.color}`}>{stCfg.label}</span>
+                        </td>
+                        <td className="p-3.5 font-bold text-emerald-600 dark:text-emerald-400">{fmtBRL(margem)}</td>
+                        <td className="p-3.5 text-center">
+                          <button onClick={() => setSelectedCargaId(c.id)}
+                            className="px-3 py-1 bg-vinho-700 hover:bg-vinho-800 text-dourado-400 font-bold rounded-lg transition-colors">
+                            Ver Carga
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // DETALHES DA CARGA
+    // ==========================================
+    function DetalhesCargaView({ carga, clientes, transportadoras, modais, onBack, onSave }) {
+      const cli = clientes.find(x => x.id === carga.clienteId);
+      const transp = transportadoras.find(x => x.id === carga.transportadoraId);
+      const mod = modais.find(x => x.id === carga.modalId);
+      const margem = (Number(carga.valorFaturamento) || 0) - (Number(carga.custoTransportadora) || 0);
+      const [relatorioAberto, setRelatorioAberto] = useState(false);
+      const [copiado, setCopiado] = useState(false);
+
+      const handleAvançarStatus = async (novoStatus, desc) => {
+        const novoEvento = {
+          id: `evt_${Date.now()}`,
+          dataHora: getNowBRString(),
+          tipo: STATUS_CONFIG[novoStatus]?.label || novoStatus,
+          descricao: desc,
+          criadoPor: 'Proprietário'
+        };
+        await onSave({ ...carga, status: novoStatus, historico: [...(carga.historico || []), novoEvento] });
+      };
+
+      const msgWhatsApp = `*CargaAvista - Atualização da Carga ${carga.numeroCarga}*\n\nStatus Atual: *${STATUS_CONFIG[carga.displayStatus]?.label || carga.status}*\nOrigem: ${carga.origem}\nDestino: ${carga.destino}\nPrevisão de Chegada: ${carga.previsaoChegada || 'N/A'}\n\nAgradecemos a parceria!`;
+      const linkWhatsApp = cli?.whatsapp ? `https://wa.me/${cli.whatsapp}?text=${encodeURIComponent(msgWhatsApp)}` : '#';
+
+      const assuntoEmail = `Status da Carga ${carga.numeroCarga} - CargaAvista`;
+      const corpoEmail = `Prezado(a) ${cli?.responsavel || 'Cliente'},\n\nSegue atualização:\nNº Carga: ${carga.numeroCarga}\nStatus: ${STATUS_CONFIG[carga.displayStatus]?.label || carga.status}\nOrigem: ${carga.origem}\nDestino: ${carga.destino}\nPrevisão de Chegada: ${carga.previsaoChegada || 'N/A'}\n\nAtenciosamente,\nEquipe CargaAvista`;
+      const linkMailto = cli?.email ? `mailto:${cli.email}?subject=${encodeURIComponent(assuntoEmail)}&body=${encodeURIComponent(corpoEmail)}` : '#';
+
+      const textoRelatorio = `=== RELATÓRIO DA CARGA ${carga.numeroCarga} ===
+Cliente: ${cli?.nome || 'N/A'} (CNPJ/CPF: ${cli?.cnpjCpf || 'N/A'})
+Transportadora: ${transp?.razaoSocial || 'N/A'}
+Modal: ${mod?.nome || 'N/A'}
+Origem: ${carga.origem} | Destino: ${carga.destino}
+Mercadoria: ${carga.mercadoria} | Peso: ${carga.peso} | Qtd: ${carga.quantidade}
+Previsão Embarque: ${carga.previsaoEmbarque} | Previsão Chegada: ${carga.previsaoChegada}
+Status Atual: ${STATUS_CONFIG[carga.displayStatus]?.label}
+
+--- FINANCEIRO ---
+Valor do Frete (Receita): ${fmtBRL(carga.valorFaturamento)}
+Custo Transportadora: ${fmtBRL(carga.custoTransportadora)}
+Margem Líquida: ${fmtBRL(margem)}
+
+--- HISTÓRICO ---
+${(carga.historico || []).map(h => `[${h.dataHora}] ${h.tipo}: ${h.descricao}`).join('\n')}`;
+
+      const handleCopiarRelatorio = () => {
+        navigator.clipboard.writeText(textoRelatorio);
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 2000);
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <button onClick={onBack}
+              className="px-3 py-1.5 bg-slate-200 dark:bg-vinho-cardDark hover:bg-slate-300 text-xs font-semibold rounded-xl transition-colors">
+              ← Voltar para Cargas
+            </button>
+            <div className="flex items-center gap-2">
+              <a href={linkWhatsApp} target="_blank" rel="noreferrer"
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5">
+                <MessageCircle className="w-4 h-4" /><span>WhatsApp</span>
+              </a>
+              <a href={linkMailto}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5">
+                <Mail className="w-4 h-4" /><span>E-mail</span>
+              </a>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-col md:flex-row justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-dourado-600">Ficha da Carga</span>
+                <h2 className="text-2xl font-bold text-vinho-800 dark:text-dourado-400">{carga.numeroCarga}</h2>
+                <p className="text-xs text-slate-500 mt-1">{carga.mercadoria} • {carga.peso} • {carga.quantidade}</p>
+              </div>
+              <div className="flex flex-col md:items-end">
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-block ${STATUS_CONFIG[carga.displayStatus]?.color}`}>
+                  {STATUS_CONFIG[carga.displayStatus]?.label}
+                </span>
+                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-2">Margem: {fmtBRL(margem)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 text-xs">
+              <div><p className="text-slate-400 text-[10px] uppercase font-bold">Cliente</p><p className="font-semibold">{cli?.nome || 'N/A'}</p></div>
+              <div><p className="text-slate-400 text-[10px] uppercase font-bold">Transportadora</p><p className="font-semibold">{transp?.razaoSocial || 'N/A'}</p></div>
+              <div><p className="text-slate-400 text-[10px] uppercase font-bold">Rota</p><p className="font-semibold">{carga.origem} → {carga.destino}</p></div>
+              <div><p className="text-slate-400 text-[10px] uppercase font-bold">Modal</p><p className="font-semibold">{mod?.nome || 'N/A'}</p></div>
+            </div>
+          </div>
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Avançar Etapa</h3>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => handleAvançarStatus('COLETADA', 'Carga coletada no endereço do cliente.')}
+                className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl border border-indigo-200 hover:bg-indigo-100 transition-colors">
+                📦 Coletada
+              </button>
+              <button onClick={() => handleAvançarStatus('EMBARCADA', 'Carga embarcada no modal principal.')}
+                className="px-3 py-2 bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-xs rounded-xl border border-purple-200 hover:bg-purple-100 transition-colors">
+                ⚓ Embarcada
+              </button>
+              <button onClick={() => handleAvançarStatus('EM_TRANSITO', 'Carga em deslocamento de trânsito.')}
+                className="px-3 py-2 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold text-xs rounded-xl border border-blue-200 hover:bg-blue-100 transition-colors">
+                🚢 Em Trânsito
+              </button>
+              <button onClick={() => handleAvançarStatus('ENTREGUE', 'Carga entregue no destino final.')}
+                className="px-3 py-2 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-xs rounded-xl border border-emerald-200 hover:bg-emerald-100 transition-colors">
+                ✅ Entregue
+              </button>
+              <button onClick={() => handleAvançarStatus('ATRASADA', 'Registrado atraso na rota.')}
+                className="px-3 py-2 bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold text-xs rounded-xl border border-rose-200 hover:bg-rose-100 transition-colors">
+                ⚠️ Atraso
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 dark:text-creme-100 mb-6">Histórico Operacional</h3>
+            <div className="relative pl-6 border-l-2 border-dourado-500/40 space-y-6">
+              {(carga.historico || []).map((evt) => (
+                <div key={evt.id} className="relative group">
+                  <div className="absolute -left-[31px] top-0 w-4 h-4 rounded-full bg-dourado-500 border-4 border-white dark:border-vinho-cardDark"></div>
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-400">{evt.dataHora} • Por: {evt.criadoPor}</span>
+                    <h4 className="text-xs font-bold text-vinho-800 dark:text-dourado-400">{evt.tipo}</h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">{evt.descricao}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <button onClick={() => setRelatorioAberto(!relatorioAberto)}
+              className="w-full flex justify-between items-center text-xs font-bold text-vinho-800 dark:text-dourado-400">
+              <span>Relatório Completo (para cópia)</span>
+              {relatorioAberto ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            {relatorioAberto && (
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <pre className="p-4 bg-slate-900 text-emerald-400 rounded-xl text-[11px] font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                  {textoRelatorio}
+                </pre>
+                <div className="mt-3 flex justify-end">
+                  <button onClick={handleCopiarRelatorio}
+                    className="px-4 py-2 bg-dourado-500 text-vinho-900 font-bold text-xs rounded-xl shadow hover:bg-dourado-400 transition-colors flex items-center gap-1.5">
+                    {copiado ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiado ? 'Copiado!' : 'Copiar Relatório'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // WIZARD NOVA CARGA — Estados + Cidades + Cadastro
+    // ==========================================
+    function WizardNovaCarga({ clientes, transportadoras, modais, cidades, onSaveCidade, onClose, onSave }) {
+      const [step, setStep] = useState(1);
+      const [formData, setFormData] = useState({
+        numeroCarga: `NF-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        clienteId: clientes[0]?.id || '',
+        transportadoraId: transportadoras[0]?.id || '',
+        modalId: modais[0]?.id || '',
+        origemUF: 'AM',
+        origemCidade: '',
+        destinoUF: 'PA',
+        destinoCidade: '',
+        mercadoria: '', peso: '', quantidade: '',
+        dataContratacao: getTodayBR(),
+        previsaoEmbarque: getTodayBR(),
+        previsaoChegada: '',
+        valorFrete: '', custoTransportadora: '',
+        status: 'CONTRATADA', statusRecebimento: 'Aguardando', statusPagamento: 'Aguardando', observacoes: ''
+      });
+
+      const margem = (Number(formData.valorFrete) || 0) - (Number(formData.custoTransportadora) || 0);
+
+      // Retorna cidades do estado (padrão + adicionadas pelo usuário no Supabase)
+      const getCidadesPara = (uf) => {
+        const builtin = ESTADOS_BR[uf] || [];
+        const custom = (cidades || []).filter(c => c.uf === uf).map(c => c.nome);
+        return [...new Set([...builtin, ...custom])].sort((a, b) => a.localeCompare(b));
+      };
+
+      // Adiciona nova cidade via prompt (persiste em `cidades`)
+      const handleAddCidade = async (tipo) => {
+        const uf = tipo === 'origem' ? formData.origemUF : formData.destinoUF;
+        const nome = window.prompt(`Digite o nome da nova cidade para ${uf}:`);
+        if (!nome || !nome.trim()) return;
+        const novaCidade = { id: `cid_${Date.now()}`, uf, nome: nome.trim() };
+        await onSaveCidade(novaCidade);
+        setFormData({ ...formData, [`${tipo}Cidade`]: nome.trim() });
+      };
+
+      const setDate = (field, val) => setFormData({ ...formData, [field]: maskDateInput(val) });
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!formData.origemCidade || !formData.destinoCidade) {
+          alert('Selecione a cidade de origem e destino antes de salvar.');
+          return;
+        }
+        const cargaFinal = {
+          ...formData,
+          origem: `${formData.origemCidade} (${formData.origemUF})`,
+          destino: `${formData.destinoCidade} (${formData.destinoUF})`,
+          valorFrete: Number(formData.valorFrete) || 0,
+          custoTransportadora: Number(formData.custoTransportadora) || 0,
+          valorFaturamento: Number(formData.valorFrete) || 0,
+          historico: [{
+            id: `evt_init`,
+            dataHora: getNowBRString(),
+            tipo: 'Contratação',
+            descricao: 'Carga contratada e cadastrada no sistema.',
+            criadoPor: 'Proprietário'
+          }]
+        };
+        delete cargaFinal.origemUF;
+        delete cargaFinal.origemCidade;
+        delete cargaFinal.destinoUF;
+        delete cargaFinal.destinoCidade;
+        onSave(cargaFinal);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white dark:bg-vinho-cardDark rounded-2xl shadow-2xl border border-dourado-500/30 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 bg-vinho-800 text-white flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-dourado-400">Nova Carga - Etapa {step} de 4</h3>
+                <p className="text-[11px] text-slate-300">
+                  {step === 1 && 'Contrato, Origem e Destino'}
+                  {step === 2 && 'Prazos e Previsões (DD/MM/AAAA)'}
+                  {step === 3 && 'Valores e Margem Financeira'}
+                  {step === 4 && 'Revisão e Finalização'}
+                </p>
+              </div>
+              <button onClick={onClose} className="p-1 hover:bg-vinho-700 rounded-lg"><X className="w-5 h-5 text-slate-300" /></button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
+              {step === 1 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Nº da Carga</label>
+                      <input type="text" required value={formData.numeroCarga}
+                        onChange={(e) => setFormData({ ...formData, numeroCarga: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Cliente</label>
+                      <select required value={formData.clienteId}
+                        onChange={(e) => setFormData({ ...formData, clienteId: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs">
+                        {clientes.length === 0 && <option value="">— Cadastre um cliente primeiro —</option>}
+                        {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Transportadora</label>
+                      <select required value={formData.transportadoraId}
+                        onChange={(e) => setFormData({ ...formData, transportadoraId: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs">
+                        {transportadoras.length === 0 && <option value="">— Cadastre uma transportadora primeiro —</option>}
+                        {transportadoras.map(t => <option key={t.id} value={t.id}>{t.razaoSocial}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Modal</label>
+                      <select required value={formData.modalId}
+                        onChange={(e) => setFormData({ ...formData, modalId: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs">
+                        {modais.length === 0 && <option value="">— Cadastre um modal primeiro —</option>}
+                        {modais.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* ORIGEM */}
+                  <div className="p-3 bg-slate-50 dark:bg-vinho-dark rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Origem</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1">Estado (UF)</label>
+                        <select required value={formData.origemUF}
+                          onChange={(e) => setFormData({ ...formData, origemUF: e.target.value, origemCidade: '' })}
+                          className="w-full p-2 bg-white dark:bg-vinho-cardDark border rounded-xl text-xs">
+                          {ESTADOS_UFS.map(uf => (
+                            <option key={uf} value={uf}>{uf} — {ESTADOS_NOMES[uf]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1">Cidade</label>
+                        <select required value={formData.origemCidade}
+                          onChange={(e) => {
+                            if (e.target.value === '__ADD__') handleAddCidade('origem');
+                            else setFormData({ ...formData, origemCidade: e.target.value });
+                          }}
+                          className="w-full p-2 bg-white dark:bg-vinho-cardDark border rounded-xl text-xs">
+                          <option value="">Selecione uma cidade...</option>
+                          {getCidadesPara(formData.origemUF).map(cid => (
+                            <option key={cid} value={cid}>{cid}</option>
+                          ))}
+                          <option value="__ADD__" className="text-dourado-600 font-bold">➕ Adicionar nova cidade...</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DESTINO */}
+                  <div className="p-3 bg-slate-50 dark:bg-vinho-dark rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Destino</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1">Estado (UF)</label>
+                        <select required value={formData.destinoUF}
+                          onChange={(e) => setFormData({ ...formData, destinoUF: e.target.value, destinoCidade: '' })}
+                          className="w-full p-2 bg-white dark:bg-vinho-cardDark border rounded-xl text-xs">
+                          {ESTADOS_UFS.map(uf => (
+                            <option key={uf} value={uf}>{uf} — {ESTADOS_NOMES[uf]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1">Cidade</label>
+                        <select required value={formData.destinoCidade}
+                          onChange={(e) => {
+                            if (e.target.value === '__ADD__') handleAddCidade('destino');
+                            else setFormData({ ...formData, destinoCidade: e.target.value });
+                          }}
+                          className="w-full p-2 bg-white dark:bg-vinho-cardDark border rounded-xl text-xs">
+                          <option value="">Selecione uma cidade...</option>
+                          {getCidadesPara(formData.destinoUF).map(cid => (
+                            <option key={cid} value={cid}>{cid}</option>
+                          ))}
+                          <option value="__ADD__" className="text-dourado-600 font-bold">➕ Adicionar nova cidade...</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Mercadoria</label>
+                      <input type="text" required placeholder="ex: Eletrônicos" value={formData.mercadoria}
+                        onChange={(e) => setFormData({ ...formData, mercadoria: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Peso</label>
+                      <input type="text" placeholder="ex: 30 toneladas" value={formData.peso}
+                        onChange={(e) => setFormData({ ...formData, peso: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Qtd/Volume</label>
+                      <input type="text" placeholder="ex: 2 Balsas" value={formData.quantidade}
+                        onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {step === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Data de Contratação (DD/MM/AAAA)</label>
+                    <input type="text" required placeholder="DD/MM/AAAA" maxLength={10} value={formData.dataContratacao}
+                      onChange={(e) => setDate('dataContratacao', e.target.value)}
+                      className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Previsão de Embarque (DD/MM/AAAA)</label>
+                    <input type="text" required placeholder="DD/MM/AAAA" maxLength={10} value={formData.previsaoEmbarque}
+                      onChange={(e) => setDate('previsaoEmbarque', e.target.value)}
+                      className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Previsão de Chegada (DD/MM/AAAA)</label>
+                    <input type="text" required placeholder="DD/MM/AAAA" maxLength={10} value={formData.previsaoChegada}
+                      onChange={(e) => setDate('previsaoChegada', e.target.value)}
+                      className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs" />
+                  </div>
+                </div>
+              )}
+
+              {step === 3 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Valor do Frete / Receita (R$)</label>
+                    <input type="number" required placeholder="0.00" value={formData.valorFrete}
+                      onChange={(e) => setFormData({ ...formData, valorFrete: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-sm font-bold text-emerald-600" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Custo Transportadora (R$)</label>
+                    <input type="number" required placeholder="0.00" value={formData.custoTransportadora}
+                      onChange={(e) => setFormData({ ...formData, custoTransportadora: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-sm font-bold text-rose-600" />
+                  </div>
+                  <div className="p-4 bg-dourado-500/10 border border-dourado-500/30 rounded-xl">
+                    <p className="text-[10px] font-bold text-dourado-600 uppercase tracking-wider">Margem Bruta</p>
+                    <h4 className="text-xl font-bold text-dourado-500">{fmtBRL(margem)}</h4>
+                  </div>
+                </div>
+              )}
+
+              {step === 4 && (
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 bg-slate-50 dark:bg-vinho-dark rounded-xl border">
+                    <p><strong>Carga:</strong> {formData.numeroCarga}</p>
+                    <p><strong>Rota:</strong> {formData.origemCidade || '?'} ({formData.origemUF}) → {formData.destinoCidade || '?'} ({formData.destinoUF})</p>
+                    <p><strong>Mercadoria:</strong> {formData.mercadoria}</p>
+                    <p><strong>Contratação:</strong> {formData.dataContratacao}</p>
+                    <p><strong>Embarque:</strong> {formData.previsaoEmbarque}</p>
+                    <p><strong>Chegada:</strong> {formData.previsaoChegada}</p>
+                    <p><strong>Receita:</strong> {fmtBRL(formData.valorFrete)}</p>
+                    <p><strong>Custo:</strong> {fmtBRL(formData.custoTransportadora)}</p>
+                    <p className="text-emerald-600 font-bold"><strong>Margem:</strong> {fmtBRL(margem)}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t flex justify-between">
+                {step > 1 ? (
+                  <button type="button" onClick={() => setStep(step - 1)} className="px-4 py-2 bg-slate-200 text-slate-700 text-xs font-bold rounded-xl">Anterior</button>
+                ) : <div />}
+                {step < 4 ? (
+                  <button type="button" onClick={() => setStep(step + 1)} className="px-4 py-2 bg-vinho-800 text-dourado-400 text-xs font-bold rounded-xl">Próximo</button>
+                ) : (
+                  <button type="submit" className="px-5 py-2 bg-dourado-500 text-vinho-900 font-bold text-xs rounded-xl shadow-lg">Salvar Carga</button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }    // ==========================================
+    // CRUD VIEW
+    // ==========================================
+    function CRUDView({ title, icon: Icon, items, modais, fields, onSave, onDelete }) {
+      const [isFormOpen, setIsFormOpen] = useState(false);
+      const [editingItem, setEditingItem] = useState(null);
+      const [formData, setFormData] = useState({});
+
+      const handleEdit = (item) => { setEditingItem(item); setFormData(item); setIsFormOpen(true); };
+      const handleNew = () => { setEditingItem(null); setFormData({}); setIsFormOpen(true); };
+      const handleSubmit = async (e) => { e.preventDefault(); await onSave(formData); setIsFormOpen(false); };
+
+      return (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-vinho-800 text-dourado-500 rounded-xl"><Icon className="w-6 h-6" /></div>
+              <h2 className="text-xl font-bold text-vinho-800 dark:text-dourado-500">{title}</h2>
+            </div>
+            <button onClick={handleNew} className="px-4 py-2 bg-vinho-800 text-dourado-500 font-bold text-xs rounded-xl shadow">+ Cadastrar</button>
+          </div>
+
+          {isFormOpen && (
+            <form onSubmit={handleSubmit} className="p-6 bg-white dark:bg-vinho-cardDark rounded-2xl border shadow-md space-y-4">
+              <h3 className="font-bold text-sm text-vinho-800 dark:text-dourado-400">
+                {editingItem ? 'Editar Registro' : 'Novo Registro'}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {fields.map(f => (
+                  <div key={f.key} className={f.type === 'textarea' ? 'md:col-span-2' : ''}>
+                    <label className="block font-bold mb-1 text-slate-600 dark:text-slate-300">{f.label}</label>
+                    {f.type === 'textarea' ? (
+                      <textarea rows="3" value={formData[f.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl" />
+                    ) : f.type === 'select_modal' ? (
+                      <select value={formData[f.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl">
+                        <option value="">Selecione um Modal</option>
+                        {(modais || []).map(m => <option key={m.id} value={m.nome}>{m.nome}</option>)}
+                      </select>
+                    ) : (
+                      <input type={f.type} required={f.required} value={formData[f.key] || ''}
+                        onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl" />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsFormOpen(false)} className="px-4 py-2 bg-slate-200 text-xs font-bold rounded-xl">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-vinho-800 text-dourado-400 text-xs font-bold rounded-xl">Salvar</button>
+              </div>
+            </form>
+          )}
+
+          <div className="bg-white dark:bg-vinho-cardDark rounded-2xl border shadow-sm overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-vinho-800 text-dourado-500 font-semibold uppercase">
+                <tr>
+                  {fields.slice(0, 4).map(f => <th key={f.key} className="p-3.5">{f.label}</th>)}
+                  <th className="p-3.5 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {items.length === 0 ? (
+                  <tr><td colSpan="5" className="p-6 text-center text-slate-400">Nenhum registro cadastrado.</td></tr>
+                ) : items.map(item => (
+                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-vinho-dark/40">
+                    {fields.slice(0, 4).map(f => (
+                      <td key={f.key} className="p-3.5 font-medium">{item[f.key] || '-'}</td>
+                    ))}
+                    <td className="p-3.5 text-center flex justify-center gap-2">
+                      <button onClick={() => handleEdit(item)} className="p-1.5 bg-blue-100 text-blue-700 rounded-lg"><Edit className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => onDelete(item.id)} className="p-1.5 bg-rose-100 text-rose-700 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // FINANCEIRO VIEW
+    // ==========================================
+    function FinanceiroView({ cargas, clientes, transportadoras, contasManuais, onSaveCarga, onSaveContaManual, onDeleteContaManual }) {
+      const [modalTipo, setModalTipo] = useState(null);
+      const [editandoConta, setEditandoConta] = useState(null);
+      const [formFin, setFormFin] = useState({
+        descricao: '', entidade: '', valor: '', dataVencimento: getTodayBR(), status: 'Aguardando', observacoes: ''
+      });
+
+      const salvarContaManual = (e) => {
+        e.preventDefault();
+        const novaConta = {
+          id: editandoConta?.id || `fin_${Date.now()}`,
+          tipo: modalTipo,
+          descricao: formFin.descricao,
+          entidade: formFin.entidade,
+          valor: Number(formFin.valor) || 0,
+          dataVencimento: formFin.dataVencimento,
+          status: formFin.status,
+          observacoes: formFin.observacoes
+        };
+        onSaveContaManual(novaConta);
+        setModalTipo(null); setEditandoConta(null);
+        setFormFin({ descricao: '', entidade: '', valor: '', dataVencimento: getTodayBR(), status: 'Aguardando', observacoes: '' });
+      };
+
+      const toggleStatusRecebimento = async (c) => {
+        await onSaveCarga({ ...c, statusRecebimento: c.statusRecebimento === 'Pago' ? 'Aguardando' : 'Pago' });
+      };
+      const toggleStatusPagamento = async (c) => {
+        await onSaveCarga({ ...c, statusPagamento: c.statusPagamento === 'Pago' ? 'Aguardando' : 'Pago' });
+      };
+      const toggleStatusManual = (conta) => {
+        onSaveContaManual({ ...conta, status: conta.status === 'Pago' ? 'Aguardando' : 'Pago' });
+      };
+      const abrirEdicaoManual = (c) => {
+        setEditandoConta(c); setModalTipo(c.tipo);
+        setFormFin({
+          descricao: c.descricao, entidade: c.entidade, valor: c.valor,
+          dataVencimento: c.dataVencimento, status: c.status, observacoes: c.observacoes || ''
+        });
+      };
+
+      const contasReceberManuais = contasManuais.filter(c => c.tipo === 'RECEBER');
+      const contasPagarManuais = contasManuais.filter(c => c.tipo === 'PAGAR');
+
+      return (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-vinho-800 dark:text-dourado-500">Módulo Financeiro</h2>
+              <p className="text-xs text-slate-500">Lançamentos automáticos (cargas) e manuais</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => {
+                setEditandoConta(null);
+                setFormFin({ descricao: '', entidade: '', valor: '', dataVencimento: getTodayBR(), status: 'Aguardando', observacoes: '' });
+                setModalTipo('RECEBER');
+              }} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5">
+                <Plus className="w-4 h-4" /><span>Conta a Receber</span>
+              </button>
+              <button onClick={() => {
+                setEditandoConta(null);
+                setFormFin({ descricao: '', entidade: '', valor: '', dataVencimento: getTodayBR(), status: 'Aguardando', observacoes: '' });
+                setModalTipo('PAGAR');
+              }} className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5">
+                <Plus className="w-4 h-4" /><span>Conta a Pagar</span>
+              </button>
+            </div>
+          </div>
+
+          {modalTipo && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="w-full max-w-lg bg-white dark:bg-vinho-cardDark rounded-2xl shadow-2xl border border-dourado-500/30 overflow-hidden">
+                <div className={`p-4 font-bold text-white flex justify-between items-center ${modalTipo === 'RECEBER' ? 'bg-emerald-700' : 'bg-rose-700'}`}>
+                  <h3>{editandoConta ? 'Editar Conta' : modalTipo === 'RECEBER' ? 'Nova Conta a Receber' : 'Nova Conta a Pagar'}</h3>
+                  <button onClick={() => setModalTipo(null)}><X className="w-5 h-5 text-white" /></button>
+                </div>
+                <form onSubmit={salvarContaManual} className="p-5 space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold mb-1">Descrição</label>
+                    <input type="text" required placeholder="ex: Aluguel de Galpão" value={formFin.descricao}
+                      onChange={(e) => setFormFin({ ...formFin, descricao: e.target.value })}
+                      className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold mb-1">{modalTipo === 'RECEBER' ? 'Cliente/Pagador' : 'Fornecedor'}</label>
+                      <input type="text" required value={formFin.entidade}
+                        onChange={(e) => setFormFin({ ...formFin, entidade: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl" />
+                    </div>
+                    <div>
+                      <label className="block font-bold mb-1">Valor (R$)</label>
+                      <input type="number" required placeholder="0.00" value={formFin.valor}
+                        onChange={(e) => setFormFin({ ...formFin, valor: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl font-bold" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold mb-1">Vencimento (DD/MM/AAAA)</label>
+                      <input type="text" required placeholder="DD/MM/AAAA" maxLength={10} value={formFin.dataVencimento}
+                        onChange={(e) => setFormFin({ ...formFin, dataVencimento: maskDateInput(e.target.value) })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl" />
+                    </div>
+                    <div>
+                      <label className="block font-bold mb-1">Status</label>
+                      <select value={formFin.status}
+                        onChange={(e) => setFormFin({ ...formFin, status: e.target.value })}
+                        className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl">
+                        <option value="Aguardando">Aguardando</option>
+                        <option value="Pago">Pago</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">Observações</label>
+                    <textarea rows="2" value={formFin.observacoes}
+                      onChange={(e) => setFormFin({ ...formFin, observacoes: e.target.value })}
+                      className="w-full p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl" />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button type="button" onClick={() => setModalTipo(null)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl">Cancelar</button>
+                    <button type="submit" className={`px-4 py-2 font-bold text-white rounded-xl ${modalTipo === 'RECEBER' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+                      {editandoConta ? 'Salvar Alterações' : 'Cadastrar Conta'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border shadow-sm">
+            <h3 className="font-bold text-sm text-emerald-600 mb-4 flex items-center gap-2">
+              <ArrowDownRight className="w-4 h-4" />
+              <span>Contas a Receber</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 dark:bg-vinho-dark font-semibold">
+                  <tr>
+                    <th className="p-3">Origem</th><th className="p-3">Cliente</th><th className="p-3">Valor</th>
+                    <th className="p-3">Vencimento</th><th className="p-3">Status</th><th className="p-3 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {cargas.map(c => {
+                    const cli = clientes.find(x => x.id === c.clienteId);
+                    const isPago = c.statusRecebimento === 'Pago';
+                    return (
+                      <tr key={c.id}>
+                        <td className="p-3 font-bold text-vinho-800 dark:text-dourado-400">Carga {c.numeroCarga}</td>
+                        <td className="p-3 font-medium">{cli?.nome || 'N/A'}</td>
+                        <td className="p-3 font-bold text-emerald-600">{fmtBRL(c.valorFaturamento)}</td>
+                        <td className="p-3 text-slate-500">{c.previsaoChegada || 'N/A'}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isPago ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {c.statusRecebimento || 'Aguardando'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button onClick={() => toggleStatusRecebimento(c)}
+                            className="px-3 py-1 bg-vinho-800 text-dourado-400 text-[10px] font-bold rounded-lg">
+                            {isPago ? 'Pendente' : 'Marcar Pago'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {contasReceberManuais.map(c => {
+                    const isPago = c.status === 'Pago';
+                    return (
+                      <tr key={c.id} className="bg-emerald-50/40 dark:bg-emerald-950/20">
+                        <td className="p-3 font-bold text-emerald-800 dark:text-emerald-400">
+                          <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded mr-1">MANUAL</span>
+                          {c.descricao}
+                        </td>
+                        <td className="p-3 font-medium">{c.entidade}</td>
+                        <td className="p-3 font-bold text-emerald-600">{fmtBRL(c.valor)}</td>
+                        <td className="p-3 text-slate-500">{c.dataVencimento}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isPago ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center space-x-1">
+                          <button onClick={() => toggleStatusManual(c)} className="px-2.5 py-1 bg-emerald-700 text-white text-[10px] font-bold rounded-lg">
+                            {isPago ? 'Pendente' : 'Pago'}
+                          </button>
+                          <button onClick={() => abrirEdicaoManual(c)} className="p-1 bg-blue-100 text-blue-700 rounded-lg"><Edit className="w-3 h-3 inline" /></button>
+                          <button onClick={() => onDeleteContaManual(c.id)} className="p-1 bg-rose-100 text-rose-700 rounded-lg"><Trash2 className="w-3 h-3 inline" /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border shadow-sm">
+            <h3 className="font-bold text-sm text-rose-600 mb-4 flex items-center gap-2">
+              <ArrowUpRight className="w-4 h-4" />
+              <span>Contas a Pagar</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 dark:bg-vinho-dark font-semibold">
+                  <tr>
+                    <th className="p-3">Origem</th><th className="p-3">Transportadora</th><th className="p-3">Custo</th>
+                    <th className="p-3">Vencimento</th><th className="p-3">Status</th><th className="p-3 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {cargas.map(c => {
+                    const transp = transportadoras.find(x => x.id === c.transportadoraId);
+                    const isPago = c.statusPagamento === 'Pago';
+                    return (
+                      <tr key={c.id}>
+                        <td className="p-3 font-bold text-vinho-800 dark:text-dourado-400">Carga {c.numeroCarga}</td>
+                        <td className="p-3 font-medium">{transp?.razaoSocial || 'N/A'}</td>
+                        <td className="p-3 font-bold text-rose-600">{fmtBRL(c.custoTransportadora)}</td>
+                        <td className="p-3 text-slate-500">{c.previsaoEmbarque || 'N/A'}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isPago ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {c.statusPagamento || 'Aguardando'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button onClick={() => toggleStatusPagamento(c)}
+                            className="px-3 py-1 bg-vinho-800 text-dourado-400 text-[10px] font-bold rounded-lg">
+                            {isPago ? 'Pendente' : 'Marcar Pago'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {contasPagarManuais.map(c => {
+                    const isPago = c.status === 'Pago';
+                    return (
+                      <tr key={c.id} className="bg-rose-50/40 dark:bg-rose-950/20">
+                        <td className="p-3 font-bold text-rose-800 dark:text-rose-400">
+                          <span className="text-[9px] bg-rose-200 text-rose-900 px-1.5 py-0.5 rounded mr-1">MANUAL</span>
+                          {c.descricao}
+                        </td>
+                        <td className="p-3 font-medium">{c.entidade}</td>
+                        <td className="p-3 font-bold text-rose-600">{fmtBRL(c.valor)}</td>
+                        <td className="p-3 text-slate-500">{c.dataVencimento}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isPago ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center space-x-1">
+                          <button onClick={() => toggleStatusManual(c)} className="px-2.5 py-1 bg-rose-700 text-white text-[10px] font-bold rounded-lg">
+                            {isPago ? 'Pendente' : 'Pago'}
+                          </button>
+                          <button onClick={() => abrirEdicaoManual(c)} className="p-1 bg-blue-100 text-blue-700 rounded-lg"><Edit className="w-3 h-3 inline" /></button>
+                          <button onClick={() => onDeleteContaManual(c.id)} className="p-1 bg-rose-100 text-rose-700 rounded-lg"><Trash2 className="w-3 h-3 inline" /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // RELATÓRIOS VIEW
+    // ==========================================
+    function RelatoriosView({ cargas, clientes, transportadoras, modais }) {
+      const [clienteSelId, setClienteSelId] = useState('');
+      const [relatorioTexto, setRelatorioTexto] = useState('');
+      const [copiado, setCopiado] = useState(false);
+
+      const clienteSel = clientes.find(c => c.id === clienteSelId);
+      const cargasDoCliente = cargas.filter(c => c.clienteId === clienteSelId);
+
+      const gerarRelatorioCliente = () => {
+        if (!clienteSel) return;
+        const totalFaturado = cargasDoCliente.reduce((acc, c) => acc + (Number(c.valorFaturamento) || 0), 0);
+        const totalCusto = cargasDoCliente.reduce((acc, c) => acc + (Number(c.custoTransportadora) || 0), 0);
+        const margemTotal = totalFaturado - totalCusto;
+        const txt = `=== RELATÓRIO DO CLIENTE ===
+Cliente: ${clienteSel.nome}
+CNPJ/CPF: ${clienteSel.cnpjCpf}
+Responsável: ${clienteSel.responsavel}
+Telefone: ${clienteSel.telefone} | E-mail: ${clienteSel.email}
+
+--- RESUMO ---
+Total de Cargas: ${cargasDoCliente.length}
+Faturamento Total: ${fmtBRL(totalFaturado)}
+Custo Total: ${fmtBRL(totalCusto)}
+Margem Líquida: ${fmtBRL(margemTotal)}
+
+--- CARGAS ---
+${cargasDoCliente.map(c => {
+  const mod = modais.find(m => m.id === c.modalId);
+  const transp = transportadoras.find(t => t.id === c.transportadoraId);
+  return `• ${c.numeroCarga} [${STATUS_CONFIG[c.displayStatus]?.label || c.status}]
+  Rota: ${c.origem} → ${c.destino} | Modal: ${mod?.nome || 'N/A'}
+  Transportadora: ${transp?.razaoSocial || 'N/A'}
+  Embarque: ${c.previsaoEmbarque} | Chegada: ${c.previsaoChegada}
+  Receita: ${fmtBRL(c.valorFaturamento)} | Custo: ${fmtBRL(c.custoTransportadora)} | Margem: ${fmtBRL((Number(c.valorFaturamento)||0)-(Number(c.custoTransportadora)||0))}`;
+}).join('\n')}`;
+        setRelatorioTexto(txt);
+      };
+
+      const copiarRelatorioGeral = () => {
+        navigator.clipboard.writeText(relatorioTexto);
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 2000);
+      };
+
+      return (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-xl font-bold text-vinho-800 dark:text-dourado-500">Relatórios Gerenciais</h2>
+            <p className="text-xs text-slate-500">Relatórios por cliente e consolidado operacional</p>
+          </div>
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border shadow-sm space-y-4">
+            <h3 className="font-bold text-sm text-vinho-800 dark:text-dourado-400">Relatório por Cliente</h3>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <select value={clienteSelId} onChange={(e) => setClienteSelId(e.target.value)}
+                className="flex-1 p-2 bg-slate-50 dark:bg-vinho-dark border rounded-xl text-xs">
+                <option value="">Selecione um Cliente</option>
+                {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+              <button onClick={gerarRelatorioCliente} disabled={!clienteSelId}
+                className="px-4 py-2 bg-vinho-800 disabled:opacity-50 text-dourado-400 font-bold text-xs rounded-xl shadow">
+                Gerar Relatório
+              </button>
+            </div>
+            {relatorioTexto && (
+              <div className="mt-4 pt-4 border-t space-y-3">
+                <pre className="p-4 bg-slate-900 text-emerald-400 rounded-xl text-[11px] font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                  {relatorioTexto}
+                </pre>
+                <div className="flex justify-end">
+                  <button onClick={copiarRelatorioGeral}
+                    className="px-4 py-2 bg-dourado-500 text-vinho-900 font-bold text-xs rounded-xl shadow flex items-center gap-1.5">
+                    {copiado ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiado ? 'Copiado!' : 'Copiar Relatório'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="p-5 bg-white dark:bg-vinho-cardDark rounded-2xl border shadow-sm space-y-4">
+            <h3 className="font-bold text-sm text-vinho-800 dark:text-dourado-400">Relatório Completo de Cargas</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-vinho-800 text-dourado-500 font-semibold uppercase">
+                  <tr>
+                    <th className="p-3">Carga</th><th className="p-3">Cliente</th><th className="p-3">Transportadora</th>
+                    <th className="p-3">Modal</th><th className="p-3">Status</th><th className="p-3">Faturamento</th>
+                    <th className="p-3">Custo</th><th className="p-3">Margem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {cargas.map(c => {
+                    const cli = clientes.find(x => x.id === c.clienteId);
+                    const transp = transportadoras.find(x => x.id === c.transportadoraId);
+                    const mod = modais.find(x => x.id === c.modalId);
+                    const margem = (Number(c.valorFaturamento) || 0) - (Number(c.custoTransportadora) || 0);
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-vinho-dark/40">
+                        <td className="p-3 font-bold text-vinho-800 dark:text-dourado-400">{c.numeroCarga}</td>
+                        <td className="p-3 font-medium">{cli?.nome || 'N/A'}</td>
+                        <td className="p-3 text-slate-500">{transp?.razaoSocial || 'N/A'}</td>
+                        <td className="p-3">{mod?.nome || 'N/A'}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${STATUS_CONFIG[c.displayStatus]?.color}`}>
+                            {STATUS_CONFIG[c.displayStatus]?.label}
+                          </span>
+                        </td>
+                        <td className="p-3 font-semibold text-emerald-600">{fmtBRL(c.valorFaturamento)}</td>
+                        <td className="p-3 font-semibold text-rose-600">{fmtBRL(c.custoTransportadora)}</td>
+                        <td className="p-3 font-bold text-dourado-600 dark:text-dourado-400">{fmtBRL(margem)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // RENDER
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
